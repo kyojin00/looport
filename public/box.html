@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>박스 적재 — Container Sim</title>
+<link rel="stylesheet" href="css/style.css">
+<style>
+  body { overflow: hidden; }
+  .viewer-layout { flex:1; display:flex; overflow:hidden; height:calc(100vh - 52px); }
+
+  /* ── SIDEBAR ── */
+  .sidebar { width:270px; background:var(--surface); border-right:1px solid var(--border); display:flex; flex-direction:column; flex-shrink:0; overflow:hidden; height:calc(100vh - 52px); }
+  .sidebar-scroll { flex:1; overflow-y:auto; padding:8px; min-height:0; }
+  .sidebar-scroll::-webkit-scrollbar { width:4px; }
+  .sidebar-scroll::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
+  .sidebar-actions { padding:10px; border-top:1px solid var(--border); display:flex; gap:6px; flex-wrap:wrap; }
+
+  /* ── BOX ITEM ── */
+  .box-item { background:var(--surface2); border:1px solid var(--border); border-radius:8px; padding:10px 12px; margin-bottom:6px; cursor:pointer; transition:all .18s; }
+  .box-item:hover { border-color:#3a3d48; }
+  .box-item.selected { border-color:var(--accent); background:rgba(56,189,248,.07); }
+  .box-item-header { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
+  .box-dot { width:10px; height:10px; border-radius:3px; flex-shrink:0; }
+  .box-name { font-size:13px; font-weight:700; flex:1; }
+  .box-dims-label { font-family:var(--font-mono); font-size:9px; color:var(--text-dim); }
+  .box-controls { display:flex; align-items:center; gap:4px; }
+  .box-qty-btn { background:var(--surface); border:1px solid var(--border); color:var(--text-dim); border-radius:3px; font-size:11px; padding:2px 7px; cursor:pointer; font-family:var(--font-mono); transition:all .15s; }
+  .box-qty-btn:hover { border-color:var(--accent); color:var(--accent); }
+  .box-qty-input { width:46px; background:var(--surface); border:1px solid var(--border); color:var(--text); border-radius:3px; text-align:center; font-family:var(--font-mono); font-size:12px; font-weight:600; padding:2px 4px; outline:none; }
+  .box-qty-input:focus { border-color:var(--accent); }
+  .box-qty-input::-webkit-inner-spin-button { -webkit-appearance:none; }
+  .box-rm-btn { background:none; border:none; color:var(--text-dim); cursor:pointer; font-size:13px; padding:0 4px; opacity:.5; }
+  .box-rm-btn:hover { color:var(--red); opacity:1; }
+  .box-progress-wrap { background:var(--surface); border-radius:3px; height:3px; margin-top:8px; overflow:hidden; }
+  .box-progress-bar { height:100%; border-radius:3px; transition:width .3s; }
+
+  /* ── ADD BOX FORM ── */
+  .add-form { background:var(--surface2); border:1px solid var(--border); border-radius:8px; padding:12px; margin-bottom:8px; }
+  .add-form-title { font-size:11px; font-weight:700; color:var(--accent); margin-bottom:10px; }
+  .form-row { display:flex; align-items:center; gap:6px; margin-bottom:7px; }
+  .form-label { font-size:10px; color:var(--text-dim); min-width:28px; font-family:var(--font-mono); }
+  .form-input { flex:1; background:var(--surface); border:1px solid var(--border); color:var(--text); border-radius:4px; font-family:var(--font-mono); font-size:11px; padding:4px 7px; outline:none; }
+  .form-input:focus { border-color:var(--accent); }
+  .form-dims { display:flex; gap:4px; }
+  .form-dims .form-input { width:52px; flex:none; text-align:center; }
+  .form-unit { font-size:9px; color:var(--text-dim); }
+
+  /* ── CONTAINER TABS ── */
+  .cont-tabs-wrap { padding:6px 8px; border-bottom:1px solid var(--border); display:flex; flex-wrap:wrap; gap:4px; }
+  .cont-tab { background:var(--surface2); border:1px solid var(--border); border-radius:5px; padding:4px 10px; font-size:11px; cursor:pointer; display:flex; align-items:center; gap:5px; transition:all .15s; }
+  .cont-tab.active { border-color:var(--accent); color:var(--accent); background:rgba(56,189,248,.1); }
+  .cont-tab-rm { background:none; border:none; color:var(--text-dim); cursor:pointer; font-size:11px; padding:0; margin-left:2px; }
+  .cont-tab-rm:hover { color:var(--red); }
+  .cont-add-btn { background:none; border:1px dashed var(--border); border-radius:5px; padding:4px 10px; font-size:11px; color:var(--text-dim); cursor:pointer; transition:all .15s; }
+  .cont-add-btn:hover { border-color:var(--accent); color:var(--accent); }
+
+  /* ── VIEWPORT ── */
+  .viewport-wrap { flex:1; position:relative; overflow:hidden; background:#111520; }
+  #canvas3d { width:100%; height:100%; display:block; }
+  .hud { position:absolute; bottom:16px; left:16px; display:flex; flex-direction:column; gap:3px; pointer-events:none; }
+  .hud-row { display:flex; align-items:center; gap:6px; }
+  .hud-label { font-family:var(--font-mono); font-size:9px; color:var(--text-dim); min-width:54px; }
+  .hud-val { font-family:var(--font-mono); font-size:11px; color:var(--text); font-weight:600; }
+  .view-btns { position:absolute; bottom:16px; right:16px; display:flex; gap:4px; }
+  .view-btn { background:rgba(23,27,39,.85); border:1px solid var(--border); color:var(--text-dim); border-radius:4px; padding:5px 10px; font-size:10px; cursor:pointer; backdrop-filter:blur(6px); transition:all .15s; font-family:var(--font-mono); }
+  .view-btn:hover { border-color:var(--accent); color:var(--accent); }
+  .controls-hint { font-size:9px; color:var(--text-dim); background:rgba(17,21,32,.85); border:1px solid var(--border); border-radius:6px; padding:7px 10px; line-height:1.8; backdrop-filter:blur(6px); white-space:nowrap; }
+
+  /* ── TOOL PANEL ── */
+  .tool-panel { background:rgba(17,21,32,.9); border:1px solid var(--border); border-radius:7px; backdrop-filter:blur(10px); min-width:160px; }
+  .tool-panel-header { display:flex; align-items:center; justify-content:space-between; padding:7px 10px; cursor:pointer; }
+  .tool-panel-body { padding:8px 10px 10px; }
+  .tool-panel.collapsed .tool-panel-body { display:none; }
+  .tool-toggle { font-size:8px; color:var(--text-dim); transition:transform .2s; }
+  .tool-panel.collapsed .tool-toggle { transform:rotate(180deg); }
+  .tool-panel-title { font-size:9px; font-weight:700; color:var(--text-dim); letter-spacing:.05em; margin-bottom:6px; }
+  .slice-row { display:flex; gap:4px; margin-bottom:6px; }
+  .slice-btn { background:var(--surface2); border:1px solid var(--border); color:var(--text-dim); border-radius:4px; padding:3px 9px; font-size:10px; cursor:pointer; font-family:var(--font-mono); transition:all .15s; }
+  .slice-btn:hover { border-color:var(--accent); color:var(--accent); }
+  .slice-btn.active { border-color:var(--accent); background:rgba(56,189,248,.15); color:var(--accent); font-weight:700; }
+  .slice-slider-wrap { display:flex; align-items:center; gap:6px; }
+  #sliceVal { color:var(--accent); min-width:60px; text-align:right; font-family:var(--font-mono); font-size:10px; }
+
+  /* ── RIGHT SIDEBAR ── */
+  .right-sidebar { width:200px; background:var(--surface); border-left:1px solid var(--border); display:flex; flex-direction:column; overflow:hidden; }
+  .placed-scroll { flex:1; overflow-y:auto; padding:8px; }
+  .placed-scroll::-webkit-scrollbar { width:3px; }
+  .placed-scroll::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
+  .placed-item { display:flex; align-items:center; gap:6px; padding:5px 7px; border-radius:5px; cursor:pointer; transition:background .15s; border-bottom:1px solid var(--border); }
+  .placed-item:hover { background:var(--surface2); }
+  .placed-item.hl { background:rgba(56,189,248,.1); }
+
+  /* ── TOAST ── */
+  .toast { position:fixed; bottom:24px; left:50%; transform:translateX(-50%) translateY(10px); background:rgba(15,20,32,.95); border:1px solid var(--border); border-radius:8px; padding:9px 18px; font-size:12px; color:var(--text); opacity:0; pointer-events:none; z-index:9999; transition:all .3s; backdrop-filter:blur(10px); white-space:nowrap; }
+  .toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+  .place-hint { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); background:rgba(56,189,248,.12); border:1px solid rgba(56,189,248,.3); border-radius:8px; padding:10px 18px; font-size:12px; color:var(--accent); pointer-events:none; display:none; }
+  .place-hint.show { display:block; }
+
+  /* ── 모바일 햄버거 ── */
+  .nav-hamburger {
+    display:none; flex-direction:column; justify-content:center; gap:5px;
+    width:36px; height:36px; padding:6px; cursor:pointer;
+    background:none; border:none; margin-left:auto; flex-shrink:0;
+  }
+  .nav-hamburger span { display:block; height:2px; background:var(--text-dim); border-radius:2px; transition:all 0.2s; }
+  .nav-hamburger.open span:nth-child(1) { transform:translateY(7px) rotate(45deg); }
+  .nav-hamburger.open span:nth-child(2) { opacity:0; }
+  .nav-hamburger.open span:nth-child(3) { transform:translateY(-7px) rotate(-45deg); }
+  .nav-mobile-menu {
+    display:none; position:fixed; top:52px; left:0; right:0;
+    background:var(--surface); border-bottom:1px solid var(--border);
+    padding:8px 0; z-index:500; flex-direction:column;
+  }
+  .nav-mobile-menu.open { display:flex; }
+  .nav-mobile-menu .nav-link { padding:12px 20px; font-size:13px; border-radius:0; border-left:3px solid transparent; }
+  .nav-mobile-menu .nav-link.active { border-left-color:var(--accent); }
+
+  @media (max-width: 768px) {
+    .nav-links { display:none !important; }
+    .nav-right  { display:none !important; }
+    .nav-hamburger { display:flex; }
+    .nav-logo-sub { display:none; }
+
+    .viewer-layout { height:calc(100vh - 52px - 56px); }
+    .sidebar { display:none; }
+    .right-sidebar { display:none; }
+
+    /* 모바일 하단 탭바 */
+    .mob-tabbar {
+      position:fixed; bottom:0; left:0; right:0; height:56px;
+      background:var(--surface); border-top:1px solid var(--border);
+      display:flex; z-index:300;
+    }
+    .mob-tab {
+      flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center;
+      gap:2px; font-size:10px; color:var(--text-dim); cursor:pointer;
+      border:none; background:transparent; font-family:var(--font-sans);
+      font-weight:600; transition:color 0.2s; -webkit-tap-highlight-color:transparent;
+    }
+    .mob-tab.active { color:var(--accent); }
+    .mob-tab-icon { font-size:16px; line-height:1; }
+
+    /* 모바일 드로어 */
+    .mob-drawer {
+      position:fixed; bottom:56px; left:0; right:0; z-index:250;
+      background:var(--surface); border-top:2px solid var(--accent);
+      border-radius:16px 16px 0 0; max-height:70vh;
+      display:none; flex-direction:column;
+      box-shadow:0 -8px 32px rgba(0,0,0,.5);
+    }
+    .mob-drawer.open { display:flex; }
+    .mob-drawer-handle { width:36px; height:4px; background:var(--border); border-radius:2px; margin:10px auto 6px; cursor:pointer; flex-shrink:0; }
+    .mob-drawer-title { font-family:var(--font-mono); font-size:11px; color:var(--text-dim); text-align:center; padding:0 0 8px; flex-shrink:0; text-transform:uppercase; letter-spacing:.08em; }
+    .mob-drawer-scroll { flex:1; overflow-y:auto; padding:0 12px 12px; -webkit-overflow-scrolling:touch; }
+    .mob-drawer-actions { padding:10px 12px 14px; border-top:1px solid var(--border); display:flex; gap:8px; flex-shrink:0; }
+
+    .mob-overlay { display:none; position:fixed; inset:0; z-index:240; background:rgba(0,0,0,.5); }
+    .mob-overlay.open { display:block; }
+
+    .view-btns { bottom:68px; }
+    .place-hint { top:40%; }
+    .hud { bottom:68px; }
+    .controls-hint { display:none; }
+  }
+</style>
+</head>
+<body>
+
+<nav>
+  <a class="nav-logo" href="index.html">
+    <div class="nav-logo-icon">C</div>
+    <div>
+      <div class="nav-logo-text">CONTAINER SIM</div>
+      <div class="nav-logo-sub">MQ4 HEV | GAMMA2 1.6 T-GDI</div>
+    </div>
+  </a>
+  <div class="nav-links">
+    <a class="nav-link" href="index.html">부품 목록</a>
+    <a class="nav-link" href="viewer.html">3D 뷰어</a>
+    <a class="nav-link active" href="box.html">3D 박스</a>
+    <a class="nav-link" href="Pallet.html">팔레트</a>
+  </div>
+  <div class="nav-right">
+    <div class="nav-pill">체적 활용: <b id="navUtil">0.0</b>%</div>
+    <div class="nav-pill" id="navCont">ST</div>
+  </div>
+  <button class="nav-hamburger" id="hamburger" onclick="toggleMobileMenu()" aria-label="메뉴">
+    <span></span><span></span><span></span>
+  </button>
+</nav>
+
+<div class="nav-mobile-menu" id="mobileMenu">
+  <a class="nav-link" href="index.html">부품 목록</a>
+  <a class="nav-link" href="viewer.html">3D 뷰어</a>
+  <a class="nav-link active" href="box.html">3D 박스</a>
+  <a class="nav-link" href="Pallet.html">팔레트</a>
+</div>
+
+<div class="viewer-layout">
+
+  <!-- Left sidebar -->
+  <div class="sidebar" id="sidebarLeft">
+    <div class="card-header" style="padding:8px 14px;border-bottom:1px solid var(--border)">컨테이너</div>
+    <div class="cont-tabs-wrap" id="contTabs"></div>
+    <div class="card-header" style="padding:8px 14px;border-bottom:1px solid var(--border)">박스 등록</div>
+    <div class="sidebar-scroll">
+      <div class="add-form" id="addForm">
+        <div class="add-form-title">새 박스 추가</div>
+        <div class="form-row">
+          <span class="form-label">이름</span>
+          <input class="form-input" id="fName" placeholder="박스 이름" maxlength="20">
+          <input type="color" id="fColor" value="#4a9eff" style="width:26px;height:26px;border:none;background:none;cursor:pointer;padding:0;border-radius:4px;flex-shrink:0">
+        </div>
+        <div class="form-row">
+          <span class="form-label">크기</span>
+          <div class="form-dims">
+            <input class="form-input" id="fW" type="number" placeholder="W" min="1" max="99999">
+            <input class="form-input" id="fH" type="number" placeholder="H" min="1" max="99999">
+            <input class="form-input" id="fD" type="number" placeholder="D" min="1" max="99999">
+          </div>
+          <span class="form-unit">mm</span>
+        </div>
+        <div class="form-row">
+          <span class="form-label">수량</span>
+          <input class="form-input" id="fQty" type="number" placeholder="개수" min="1" max="999" style="max-width:70px">
+        </div>
+        <button class="btn btn-primary" style="width:100%;font-size:11px;margin-top:4px" onclick="addBoxType()">등록</button>
+      </div>
+      <div id="boxList"></div>
+    </div>
+    <div class="sidebar-actions">
+      <button class="btn btn-primary" style="font-size:11px;flex:1" onclick="autoArrange()">자동 배치</button>
+      <button class="btn btn-danger"  style="font-size:11px;flex:1" onclick="clearAll()">초기화</button>
+    </div>
+  </div>
+
+  <!-- 3D viewport -->
+  <div class="viewport-wrap">
+    <canvas id="canvas3d"></canvas>
+    <div class="hud">
+      <div class="hud-row"><span class="hud-label">컨테이너</span><span class="hud-val" id="hudCont">-</span></div>
+      <div class="hud-row"><span class="hud-label">박스 수</span><span class="hud-val" id="hudCount">0</span></div>
+      <div class="hud-row"><span class="hud-label">체적</span><span class="hud-val"><span id="loadPct">0.0</span>%</span></div>
+    </div>
+    <div style="position:absolute;top:12px;right:12px;display:flex;flex-direction:column;gap:8px;z-index:50">
+      <div class="controls-hint">
+        <b>드래그</b> 회전<br><b>우클릭</b> 이동<br><b>휠</b> 줌<br><b>클릭</b> 배치
+      </div>
+      <div class="tool-panel" id="toolPanel" style="position:static">
+        <div class="tool-panel-header" onclick="document.getElementById('toolPanel').classList.toggle('collapsed')">
+          <span style="font-size:11px;font-weight:700">보기 도구</span>
+          <span class="tool-toggle">▲</span>
+        </div>
+        <div class="tool-panel-body">
+          <div class="tool-panel-title">단면도</div>
+          <div class="slice-row">
+            <button class="slice-btn" data-axis="x" onclick="setSlice('x')">X축</button>
+            <button class="slice-btn" data-axis="y" onclick="setSlice('y')">Y층</button>
+            <button class="slice-btn" data-axis="z" onclick="setSlice('z')">Z축</button>
+          </div>
+          <div class="slice-slider-wrap" id="sliceSliderWrap" style="display:none">
+            <input type="range" id="sliceSlider" min="-6000" max="6000" value="0" oninput="onSliceSlider(this.value)" style="flex:1;accent-color:var(--accent)">
+            <span id="sliceVal">0 mm</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="view-btns">
+      <button class="view-btn" onclick="setView('front')">정면</button>
+      <button class="view-btn" onclick="setView('top')">상면</button>
+      <button class="view-btn" onclick="setView('side')">측면</button>
+      <button class="view-btn" onclick="setView('iso')">등각</button>
+    </div>
+    <div class="place-hint" id="placeHint">클릭하여 박스를 배치하세요</div>
+  </div>
+
+  <!-- Right sidebar -->
+  <div class="right-sidebar" id="sidebarRight">
+    <div class="card-header" style="padding:8px 14px;border-bottom:1px solid var(--border)">배치 목록</div>
+    <div class="placed-scroll" id="placedList"></div>
+  </div>
+
+</div>
+
+<!-- 모바일 탭바 -->
+<div class="mob-tabbar" id="mobTabbar" style="display:none">
+  <button class="mob-tab" onclick="mobOpen('left')"><span class="mob-tab-icon">▤</span>박스</button>
+  <button class="mob-tab" onclick="mobOpen('right')"><span class="mob-tab-icon">▦</span>목록</button>
+  <button class="mob-tab" onclick="autoArrange()"><span class="mob-tab-icon">↻</span>자동배치</button>
+  <button class="mob-tab" onclick="clearAll()"><span class="mob-tab-icon">×</span>초기화</button>
+</div>
+
+<!-- 모바일 드로어 -->
+<div class="mob-drawer" id="mobDrawer">
+  <div class="mob-drawer-handle" onclick="mobClose()"></div>
+  <div class="mob-drawer-title" id="mobDrawerTitle"></div>
+  <div class="mob-drawer-scroll" id="mobDrawerScroll"></div>
+  <div class="mob-drawer-actions" id="mobDrawerActions" style="display:none">
+    <button class="btn btn-primary" style="flex:1;font-size:12px" onclick="autoArrange();mobClose()">자동 배치</button>
+    <button class="btn btn-danger"  style="flex:1;font-size:12px" onclick="clearAll();mobClose()">초기화</button>
+  </div>
+</div>
+<div class="mob-overlay" id="mobOverlay" onclick="mobClose()"></div>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="js/data.js?v=6"></script>
+<script src="js/box-viewer.js?v=1"></script>
+<script>
+  // ── 햄버거 메뉴 ──
+  function toggleMobileMenu() {
+    const menu = document.getElementById('mobileMenu');
+    const btn = document.getElementById('hamburger');
+    const isOpen = menu.classList.toggle('open');
+    btn.classList.toggle('open', isOpen);
+  }
+  document.addEventListener('click', e => {
+    const menu = document.getElementById('mobileMenu');
+    const btn = document.getElementById('hamburger');
+    if (!menu || !btn) return;
+    if (!menu.contains(e.target) && !btn.contains(e.target)) {
+      menu.classList.remove('open'); btn.classList.remove('open');
+    }
+  });
+
+  // ── 모바일 탭바 표시 ──
+  const mq = window.matchMedia('(max-width:768px)');
+  function onMQ(e) { document.getElementById('mobTabbar').style.display = e.matches ? 'flex' : 'none'; }
+  mq.addEventListener('change', onMQ); onMQ(mq);
+
+  // ── 드로어 ──
+  const originNodes = {};
+  function mobOpen(side) {
+    const titles = { left:'박스 등록', right:'배치 목록' };
+    const srcIds  = { left:'sidebarLeft', right:'sidebarRight' };
+    document.getElementById('mobDrawerTitle').textContent = titles[side];
+    document.getElementById('mobDrawerActions').style.display = side === 'left' ? 'flex' : 'none';
+    const src = document.getElementById(srcIds[side]);
+    if (src) {
+      originNodes[side] = { el: src, parent: src.parentElement, next: src.nextSibling };
+      document.getElementById('mobDrawerScroll').innerHTML = '';
+      document.getElementById('mobDrawerScroll').appendChild(src);
+    }
+    document.getElementById('mobDrawer').classList.add('open');
+    document.getElementById('mobOverlay').classList.add('open');
+    document.querySelectorAll('.mob-tab').forEach((t,i) => t.classList.toggle('active', (side==='left'&&i===0)||(side==='right'&&i===1)));
+  }
+  function mobClose() {
+    Object.entries(originNodes).forEach(([, {el, parent, next}]) => {
+      if (el && parent) { next ? parent.insertBefore(el, next) : parent.appendChild(el); }
+    });
+    document.getElementById('mobDrawer').classList.remove('open');
+    document.getElementById('mobOverlay').classList.remove('open');
+    document.getElementById('mobDrawerScroll').innerHTML = '';
+    document.querySelectorAll('.mob-tab').forEach(t => t.classList.remove('active'));
+  }
+</script>
+</body>
+</html>

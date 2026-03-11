@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>3D 뷰어 — Container Sim</title>
+<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="js/viewer-style.css?v=1">
+</head>
+<body>
+<!-- viewer.js updateStats 호환용 숨김 엘리먼트 -->
+<div style="display:none"><div id="loadBar"></div><span id="loadPctBig"></span></div>
+
+<nav>
+  <a class="nav-logo" href="index.html">
+    <div class="nav-logo-icon">C</div>
+    <div>
+      <div class="nav-logo-text">CONTAINER SIM</div>
+    </div>
+  </a>
+  <div class="nav-links">
+    <a class="nav-link" href="index.html">부품 목록</a>
+    <a class="nav-link active" href="viewer.html">3D 뷰어</a>
+    <a class="nav-link" href="box.html">3D 박스</a>
+    <a class="nav-link" href="Pallet.html">팔레트</a>
+  </div>
+  <div class="nav-right">
+    <div class="nav-pill">체적 활용: <b id="navUtil">0.0</b>%</div>
+    <div class="nav-pill" id="navCont">ST</div>
+  </div>
+  <button class="nav-hamburger" id="hamburger" onclick="toggleMobileMenu()" aria-label="메뉴">
+    <span></span><span></span><span></span>
+  </button>
+</nav>
+
+<div class="nav-mobile-menu" id="mobileMenu">
+  <a class="nav-link" href="index.html">부품 목록</a>
+  <a class="nav-link active" href="viewer.html">3D 뷰어</a>
+  <a class="nav-link" href="box.html">3D 박스</a>
+  <a class="nav-link" href="Pallet.html">팔레트</a>
+</div>
+
+<div class="viewer-layout">
+
+  <!-- 왼쪽 사이드바 -->
+  <div class="sidebar">
+    <div class="sb-scroll">
+
+      <!-- ── 컨테이너 ── -->
+      <div class="sb-acc" id="sbaContainer">
+        <div class="sb-acc-header" onclick="sbToggle('sbaContainer')">
+          <span class="sb-acc-title">컨테이너</span>
+          <span class="sb-acc-arrow" id="arr-sbaContainer">▾</span>
+        </div>
+        <div class="sb-acc-body" id="body-sbaContainer">
+          <div class="cont-tabs-wrap" id="contTabs"></div>
+        </div>
+      </div>
+
+      <!-- ── 부품 선택<!-- ── 부품 선택 ── -->
+      <div class="sb-acc" id="sbaParts">
+        <div class="sb-acc-header" onclick="sbToggle('sbaParts')">
+          <span class="sb-acc-title">부품 선택</span>
+          <span class="sb-acc-arrow" id="arr-sbaParts">▾</span>
+        </div>
+        <div class="sb-acc-body" id="body-sbaParts">
+          <div style="padding:8px" id="partPicker"></div>
+        </div>
+      </div>
+
+      <!-- ── 설정 ── -->
+      <div class="sb-acc sb-acc-closed" id="sbaSettings">
+        <div class="sb-acc-header" onclick="sbToggle('sbaSettings')">
+          <span class="sb-acc-title">설정</span>
+          <span class="sb-acc-arrow" id="arr-sbaSettings">▾</span>
+        </div>
+        <div class="sb-acc-body" id="body-sbaSettings" style="display:none">
+          <div class="sb-setting-row" style="flex-direction:column;gap:6px;align-items:stretch">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <span class="sb-setting-label">한계 높이</span>
+              <div style="display:flex;align-items:center;gap:4px">
+                <input class="qty-input" id="fillHeightInput" type="number" min="100" max="2585" step="10" value="2100"
+                  style="width:52px;font-size:11px" onchange="setFillHeight(this.value)">
+                <span style="font-size:9px;color:var(--text-dim)">mm</span>
+                <span style="font-family:var(--font-mono);font-size:10px;color:var(--accent)" id="fillHeightPct">81%</span>
+              </div>
+            </div>
+            <input type="range" id="fillHeightSlider" min="100" max="2585" step="10" value="2100"
+              style="width:100%;accent-color:var(--accent);cursor:pointer;height:3px"
+              oninput="setFillHeight(this.value)">
+          </div>
+          <div class="sb-setting-row" style="flex-direction:column;gap:6px;align-items:stretch">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <span class="sb-setting-label">컨테이너 간격</span>
+              <span style="font-family:var(--font-mono);font-size:10px;color:var(--accent)" id="contSpacingLabel">500 mm</span>
+            </div>
+            <input type="range" id="contSpacingSlider" min="0" max="3000" step="100" value="500"
+              style="width:100%;accent-color:var(--accent);cursor:pointer;height:3px"
+              oninput="setContSpacing(this.value)">
+          </div>
+        </div>
+      </div>
+
+      <!-- ── 액션 ── -->
+      <div class="sb-actions-inner">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px">
+          <button class="sb-btn sb-btn-primary" onclick="autoArrange()">⚡ 자동배치</button>
+          <button class="sb-btn sb-btn-danger"  onclick="clearAll()">✕ 초기화</button>
+        </div>
+        <button class="sb-btn sb-btn-ghost" style="width:100%;margin-bottom:6px;border-color:rgba(167,139,250,0.4);color:#a78bfa" onclick="runBenchmark()">
+          📊 적재 최적화 분석
+        </button>
+        <button class="sb-btn sb-btn-ghost" style="width:100%" onclick="openPdfPreview()">📄 PDF 출력</button>
+      </div>
+
+    </div><!-- /sb-scroll -->
+  </div>
+
+  <!-- 뷰포트 -->
+  <div class="viewport-wrap">
+    <canvas id="canvas3d"></canvas>
+    <div class="hud">
+      <div class="hud-row"><span class="hud-label">컨테이너</span><span class="hud-val" id="hudCont">-</span></div>
+      <div class="hud-row"><span class="hud-label">적재 부품</span><span class="hud-val" id="hudCount">0</span></div>
+      <div class="hud-row"><span class="hud-label">체적</span><span class="hud-val"><span id="loadPct">0.0</span>%</span></div>
+    </div>
+    <div style="position:absolute;top:12px;right:12px;display:flex;flex-direction:column;gap:8px;z-index:50;max-height:calc(100% - 60px);overflow-y:auto;overflow-x:hidden">
+      <div class="controls-hint" style="position:static">
+        <b>드래그</b> 회전&nbsp;&nbsp;<b>우클릭</b> 이동&nbsp;&nbsp;<b>휠</b> 줌
+      </div>
+      <div class="tool-panel" id="toolPanel" style="position:static;right:auto;top:auto">
+        <div class="tool-panel-header" onclick="document.getElementById('toolPanel').classList.toggle('collapsed')">
+          <span style="color:var(--text);font-size:11px;font-weight:700">보기 도구</span>
+          <span class="tool-toggle">▲</span>
+        </div>
+        <div class="tool-panel-body">
+          <div class="tool-panel-title">단면도</div>
+          <button class="btn btn-primary" style="width:100%;font-size:11px;margin-bottom:4px" onclick="openSliceModal()">단면도 보기</button>
+          <div class="tool-panel-title" style="margin-top:10px">부품 필터</div>
+          <div class="layer-row" id="layerToggles">
+            <span style="color:var(--text-dim);font-size:9px">자동배치 후 활성화</span>
+          </div>
+          <button class="layer-reset" onclick="resetLayers()">전체 표시</button>
+        </div>
+      </div>
+    </div>
+    <div class="view-btns">
+      <button class="view-btn" onclick="setView('front')">정면</button>
+      <button class="view-btn" onclick="setView('top')">상면</button>
+      <button class="view-btn" onclick="setView('side')">측면</button>
+      <button class="view-btn" onclick="setView('iso')">등각</button>
+    </div>
+  </div>
+
+  <!-- 오른쪽 사이드바 (HUD 통합) -->
+  <div class="right-sidebar">
+
+    <!-- ① 색상 게이지 HUD -->
+    <div class="rs-gauge">
+      <div class="rs-gauge-title">적재 현황</div>
+      <div class="rs-ring-row">
+        <div class="rs-ring-wrap">
+          <svg class="rs-ring-svg" viewBox="0 0 72 72">
+            <circle class="rs-ring-bg" cx="36" cy="36" r="28"/>
+            <circle class="rs-ring-fill" id="rsRingFill" cx="36" cy="36" r="28"/>
+          </svg>
+          <div class="rs-ring-center">
+            <div class="rs-ring-pct" id="rsRingPct">0%</div>
+            <div class="rs-ring-sub">배치율</div>
+          </div>
+        </div>
+        <div class="rs-stats">
+          <div class="rs-stat-row">
+            <span class="rs-stat-key">배치됨</span>
+            <span class="rs-stat-val" id="rsPlaced">0</span>
+          </div>
+          <div class="rs-stat-row">
+            <span class="rs-stat-key">미배치</span>
+            <span class="rs-stat-val warn" id="rsRemain">0</span>
+          </div>
+          <div class="rs-stat-row">
+            <span class="rs-stat-key">컨테이너</span>
+            <span class="rs-stat-val" id="rsConts">1</span>
+          </div>
+        </div>
+      </div>
+      <div class="rs-linear-wrap">
+        <div class="rs-linear-label">
+          <span>체적 점유율</span>
+          <span id="rsVolPct">0.0%</span>
+        </div>
+        <div class="rs-linear-track">
+          <div class="rs-linear-fill" id="rsVolBar" style="width:0%"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ② 부품별 프로그레스 바 -->
+    <div class="rs-parts">
+      <div class="rs-parts-title">부품별 현황</div>
+      <div id="rsPartRows"></div>
+    </div>
+
+    <!-- ③ 단면 미니맵 -->
+    <div class="rs-minimap">
+      <div class="rs-minimap-header">
+        <span class="rs-minimap-title">단면 미니맵</span>
+        <div class="rs-minimap-tabs">
+          <button class="rs-mmap-tab active" onclick="rsSetView('side',this)">XY</button>
+          <button class="rs-mmap-tab" onclick="rsSetView('top',this)">XZ</button>
+          <button class="rs-mmap-tab" onclick="rsSetView('front',this)">ZY</button>
+        </div>
+      </div>
+      <div class="rs-canvas-wrap">
+        <canvas id="rsMinimap" height="110" style="display:block;width:100%"></canvas>
+      </div>
+
+    </div>
+
+    <!-- 기존 적재 목록 -->
+    <div id="placedListHeader" class="card-header" style="padding:8px 14px;border-bottom:1px solid var(--border);border-top:1px solid var(--border)">적재 목록 (0개)</div>
+    <div class="placed-scroll" id="placedList"></div>
+  </div>
+
+</div>
+
+<!-- 모바일 바텀바 -->
+<div class="mob-bar">
+  <button class="mob-tab-btn" id="mobBtnCont"  onclick="openDrawer('cont')"><span class="mob-tab-icon">▤</span>컨테이너</button>
+  <button class="mob-tab-btn" id="mobBtnParts" onclick="openDrawer('parts')"><span class="mob-tab-icon">▦</span>부품 선택</button>
+  <button class="mob-tab-btn" id="mobBtnList"  onclick="openDrawer('list')"><span class="mob-tab-icon">≡</span>적재 목록</button>
+  <button class="mob-tab-btn" onclick="autoArrange()"><span class="mob-tab-icon">↻</span>자동 배치</button>
+  <button class="mob-tab-btn" onclick="clearAll()"><span class="mob-tab-icon">×</span>초기화</button>
+</div>
+
+<!-- 모바일 드로어 -->
+<div class="mob-drawer" id="mobDrawer">
+  <div class="mob-drawer-handle" onclick="closeDrawer()"></div>
+  <div class="mob-drawer-title" id="mobDrawerTitle">컨테이너</div>
+  <div class="mob-drawer-scroll" id="mobDrawerContent"></div>
+  <div class="mob-drawer-actions" id="mobDrawerActions" style="display:none">
+    <button class="btn btn-primary" style="flex:1;font-size:12px" onclick="autoArrange();closeDrawer()">자동 배치</button>
+    <button class="btn btn-danger"  style="flex:1;font-size:12px" onclick="clearAll();closeDrawer()">초기화</button>
+  </div>
+</div>
+<div id="mobOverlay" style="display:none;position:fixed;inset:0;z-index:180;background:rgba(0,0,0,.5)" onclick="closeDrawer()"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="js/data.js?v=18"></script>
+<script src="js/viewer.js?v=54"></script>
+<script src="js/viewer-three.js?v=55"></script>
+<script src="js/viewer-arrange.js?v=55"></script>
+<script src="js/viewer-ui.js?v=55"></script>
+<script src="js/viewer-slice.js?v=55"></script>
+<script src="js/viewer-init.js?v=1"></script>
+
+<!-- PDF 미리보기 모달 -->
+<div id="pdfModal" style="display:none;position:fixed;inset:0;z-index:2000;background:rgba(8,10,18,0.97);flex-direction:column">
+  <!-- 모달 헤더 -->
+  <div style="display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--border);background:var(--surface);flex-shrink:0">
+    <span style="font-size:14px;font-weight:700;color:var(--accent)">&#128196; PDF 출력 미리보기</span>
+    <div style="flex:1"></div>
+    <button onclick="printPdf()" style="background:var(--accent);color:#000;border:none;border-radius:5px;padding:6px 18px;font-size:12px;font-weight:700;cursor:pointer">인쇄 / PDF 저장</button>
+    <button onclick="closePdfPreview()" style="background:none;border:1px solid var(--border);color:var(--text-dim);border-radius:5px;padding:6px 14px;font-size:12px;cursor:pointer;margin-left:4px">닫기</button>
+  </div>
+  <!-- 미리보기 영역 -->
+  <div style="flex:1;overflow:auto;padding:24px;background:#2a2a2a;display:flex;justify-content:center">
+    <div id="pdfPreviewPage" style="background:#fff;width:794px;min-height:1123px;padding:28px 36px 32px;box-shadow:0 4px 32px rgba(0,0,0,0.5);color:#111;position:relative;box-sizing:border-box">
+      <!-- 내용은 JS로 동적 생성 -->
+    </div>
+  </div>
+</div>
+
+<!-- 단면도 모달 -->
+<div id="sliceModal" style="display:none;position:fixed;inset:0;z-index:1000;background:rgba(8,10,18,0.96);flex-direction:column">
+  <div style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--border);background:var(--surface);flex-shrink:0">
+    <span style="font-size:15px;font-weight:700;color:var(--accent)">단면도 뷰어</span>
+    <div style="display:flex;gap:6px;margin-left:8px">
+      <button id="smAxisX" class="sm-axis-btn" onclick="smSetAxis('x')">X축</button>
+      <button id="smAxisY" class="sm-axis-btn active" onclick="smSetAxis('y')">Y층</button>
+      <button id="smAxisZ" class="sm-axis-btn" onclick="smSetAxis('z')">Z축</button>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;margin-left:8px">
+      <button id="smPlayBtn" onclick="smTogglePlay()" style="background:var(--accent);color:#000;border:none;border-radius:5px;padding:5px 14px;font-size:12px;font-weight:700;cursor:pointer">재생</button>
+      <span style="font-family:var(--font-mono);font-size:11px;color:var(--text-dim)">속도</span>
+      <select id="smSpeed" style="background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:4px;font-size:11px;padding:3px 6px">
+        <option value="0.5">0.5×</option>
+        <option value="1" selected>1×</option>
+        <option value="2">2×</option>
+        <option value="3">3×</option>
+      </select>
+    </div>
+    <div style="flex:1"></div>
+    <span id="smPosLabel" style="font-family:var(--font-mono);font-size:13px;color:var(--accent);min-width:80px;text-align:right">0 mm</span>
+    <button onclick="closeSliceModal()" style="background:none;border:1px solid var(--border);color:var(--text-dim);border-radius:5px;padding:5px 12px;font-size:12px;cursor:pointer;margin-left:8px">닫기</button>
+  </div>
+  <div style="flex:1;display:flex;overflow:hidden;min-height:0">
+    <div style="flex:1;position:relative;overflow:hidden">
+      <canvas id="smCanvas" style="width:100%;height:100%;display:block"></canvas>
+      <div id="smSliceLine" style="position:absolute;pointer-events:none;background:rgba(56,189,248,0.35);border:1px solid rgba(56,189,248,0.8);"></div>
+      <div id="smEmptyHint" style="display:none;position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--text-dim);font-size:13px;pointer-events:none">배치된 부품이 없어요</div>
+    </div>
+    <div id="smInfoPanel" style="width:260px;flex-shrink:0;background:var(--surface);border-left:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden">
+      <div style="padding:12px 14px;border-bottom:1px solid var(--border);font-size:11px;font-weight:700;color:var(--text-dim)">클릭한 부품 정보</div>
+      <div id="smPartDetail" style="flex:1;overflow-y:auto;padding:14px">
+        <div style="color:var(--text-dim);font-size:12px;text-align:center;margin-top:40px">부품을 클릭하면<br>상세 정보가 표시됩니다</div>
+      </div>
+      <div style="border-top:1px solid var(--border);padding:10px 14px 6px;font-size:11px;font-weight:700;color:var(--text-dim)">현재 단면 부품</div>
+      <div id="smPartList" style="max-height:200px;overflow-y:auto;padding:0 10px 10px"></div>
+    </div>
+  </div>
+  <div style="padding:12px 20px;border-top:1px solid var(--border);background:var(--surface);flex-shrink:0;display:flex;align-items:center;gap:14px">
+    <span style="font-family:var(--font-mono);font-size:10px;color:var(--text-dim);min-width:30px" id="smMinLabel">0</span>
+    <input type="range" id="smSlider" style="flex:1;accent-color:var(--accent);cursor:pointer" oninput="smOnSlider(this.value)">
+    <span style="font-family:var(--font-mono);font-size:10px;color:var(--text-dim);min-width:50px;text-align:right" id="smMaxLabel">0</span>
+  </div>
+</div>
+
+</body>
+</html>
