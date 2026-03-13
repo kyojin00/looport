@@ -332,35 +332,203 @@ function buildAllContainers() {
 }
 
 // ─── MESH ─────────────────────────────────────────────────────
+
 function makeMesh(p, x, y, z, orient, contIdx) {
+  // pp.x/y/z = 부품 중심 (원래 코드와 동일)
   const dims = getOrientedDims(p, orient || 'flat');
-  const geo = new THREE.BoxGeometry(dims.w, dims.h, dims.d);
+  const bW = dims.w, bH = dims.h, bD = dims.d;
   const color = parseInt(getPartColor(p.code).replace('#', ''), 16);
 
-  const metalMap = { A: 0.6, B: 0.7, C: 0.5, D: 0.5, E: 0.5, F: 0.4, G: 0.3, H: 0.75 };
-  const roughMap = { A: 0.35, B: 0.25, C: 0.45, D: 0.45, E: 0.45, F: 0.5, G: 0.6, H: 0.3 };
-  const metal = metalMap[p.code] ?? 0.5;
-  const rough = roughMap[p.code] ?? 0.4;
+  const T = Math.max(25, Math.min(60, Math.min(bW, bD) * 0.04));
 
-  const mat = new THREE.MeshPhysicalMaterial({
-    color, roughness: rough, metalness: metal,
-    reflectivity: 0.7, clearcoat: 0.1, clearcoatRoughness: 0.3,
+  const frameMat = new THREE.MeshStandardMaterial({ color: 0x7a8fa0, roughness: 0.3, metalness: 0.9 });
+  const baseMat  = new THREE.MeshStandardMaterial({ color: 0x3a4a55, roughness: 0.6, metalness: 0.8 });
+  const metalMap = { A:0.6, B:0.7, C:0.5, D:0.5, E:0.5, F:0.4, G:0.3, H:0.75 };
+  const roughMap = { A:0.35, B:0.25, C:0.45, D:0.45, E:0.45, F:0.5, G:0.6, H:0.3 };
+  const partMat = new THREE.MeshPhysicalMaterial({
+    color, roughness: roughMap[p.code] ?? 0.4, metalness: metalMap[p.code] ?? 0.5,
+    reflectivity: 0.8, clearcoat: 0.2, clearcoatRoughness: 0.2,
   });
 
   const group = new THREE.Group();
-  const mesh = new THREE.Mesh(geo, mat);
-  mesh.castShadow = true;
-  mesh.receiveShadow = true;
-  const edges = new THREE.LineSegments(
-    new THREE.EdgesGeometry(geo),
-    new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.2 })
-  );
-  mesh.add(edges);
-  group.add(mesh);
 
+  // ── 좌표계: group 중심 = 부품 중심 ──────────────────────────
+  //    X: -bW/2 ~ +bW/2
+  //    Y: -bH/2 ~ +bH/2  (바닥 = -bH/2, 상단 = +bH/2)
+  //    Z: -bD/2 ~ +bD/2
+
+  const addBeam = (w, h, d, px, py, pz) => {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), frameMat);
+    m.position.set(px, py, pz);
+    m.castShadow = true;
+    group.add(m);
+  };
+
+  const y0 = -bH/2, y1 = bH/2; // 하단, 상단 Y
+
+  // 수직 코너 기둥 4개 (중심 Y=0, 전체 높이 bH)
+  const hx = bW/2 - T/2, hz = bD/2 - T/2;
+  [[-hx,-hz],[-hx,hz],[hx,-hz],[hx,hz]].forEach(([px,pz]) => addBeam(T, bH, T, px, 0, pz));
+
+  // 하단 수평 빔
+  const yb = y0 + T/2;
+  addBeam(bW-T*2, T, T,  0,  yb, -bD/2+T/2);
+  addBeam(bW-T*2, T, T,  0,  yb,  bD/2-T/2);
+  addBeam(T, T, bD-T*2, -bW/2+T/2, yb, 0);
+  addBeam(T, T, bD-T*2,  bW/2-T/2, yb, 0);
+
+  // 상단 수평 빔
+  const yt = y1 - T/2;
+  addBeam(bW-T*2, T, T,  0,  yt, -bD/2+T/2);
+  addBeam(bW-T*2, T, T,  0,  yt,  bD/2-T/2);
+  addBeam(T, T, bD-T*2, -bW/2+T/2, yt, 0);
+  addBeam(T, T, bD-T*2,  bW/2-T/2, yt, 0);
+
+  // 중간 보강 빔 (-bH/6, +bH/6)
+  [-bH/6, bH/6].forEach(hy => {
+    const bt = T * 0.65;
+    addBeam(bW-T*2, bt, bt,  0,          hy, -bD/2+T/2);
+    addBeam(bW-T*2, bt, bt,  0,          hy,  bD/2-T/2);
+    addBeam(bt, bt, bD-T*2, -bW/2+T/2,   hy, 0);
+    addBeam(bt, bt, bD-T*2,  bW/2-T/2,   hy, 0);
+  });
+
+  // 바닥 철판 (하단 빔 바로 위)
+  const base = new THREE.Mesh(new THREE.BoxGeometry(bW-T*2, T*0.4, bD-T*2), baseMat);
+  base.position.set(0, y0 + T*1.2, 0);
+  base.receiveShadow = true;
+  group.add(base);
+
+  // 케이지 윤곽 엣지라인 (중심=0, 크기=bW×bH×bD → 정확히 바운딩과 일치)
+  group.add(new THREE.LineSegments(
+    new THREE.EdgesGeometry(new THREE.BoxGeometry(bW, bH, bD)),
+    new THREE.LineBasicMaterial({ color: 0xaaccee, transparent: true, opacity: 0.4 })
+  ));
+
+  // ── 내부 콘텐츠 ───────────────────────────────────────────────
+  const pnlW = bW-T*2, pnlH = bH-T*2, pnlD = bD-T*2;
+
+  if (p.code === 'C2' || p.code === 'E2' || p.code === 'G') {
+    // 긴 축 방향으로 판넬들이 나란히 세워진 형태
+    // E2는 판넬 방향 90도 회전, G는 관 형태(별도 처리)
+    const alongX = p.code === 'E2' ? pnlW < pnlD : pnlW >= pnlD;
+
+    if (p.code === 'G') {
+      // ── 누름바: 관(tube) 형태로 빽빽하게 채움 ──────────────────
+      // 긴 축 방향으로 누운 관들이 격자 배열
+      const TUBE_W = 135, TUBE_H = 40; // 누름바 단면
+      const GAP = 6;
+      const TUBE_L = alongX ? pnlW : pnlD; // 관 길이
+
+      const colsA = Math.max(1, Math.floor((alongX ? pnlD : pnlW) / (TUBE_W + GAP)));
+      const colsB = Math.max(1, Math.floor(pnlH / (TUBE_H + GAP)));
+      const totalA = colsA * TUBE_W + (colsA - 1) * GAP;
+      const totalB = colsB * TUBE_H + (colsB - 1) * GAP;
+      const startA = -totalA / 2 + TUBE_W / 2;
+      const startB = -totalB / 2 + TUBE_H / 2;
+
+      const tubeMat = new THREE.MeshPhysicalMaterial({
+        color, roughness: 0.35, metalness: 0.75,
+        clearcoat: 0.2, clearcoatRoughness: 0.2,
+      });
+      const edgeMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.3 });
+
+      const tubeGeo = alongX
+        ? new THREE.BoxGeometry(TUBE_L, TUBE_H, TUBE_W)
+        : new THREE.BoxGeometry(TUBE_W, TUBE_H, TUBE_L);
+      const edgeGeo = new THREE.EdgesGeometry(tubeGeo);
+
+      for (let ci = 0; ci < colsA; ci++) {
+        for (let cj = 0; cj < colsB; cj++) {
+          const a = startA + ci * (TUBE_W + GAP);
+          const b = startB + cj * (TUBE_H + GAP);
+          const tube = new THREE.Mesh(tubeGeo, tubeMat);
+          tube.position.set(alongX ? 0 : a, b, alongX ? a : 0);
+          tube.castShadow = true;
+          tube.receiveShadow = true;
+          tube.add(new THREE.LineSegments(edgeGeo, edgeMat));
+          group.add(tube);
+        }
+      }
+
+      // 결속 밴드 2줄
+      const bandMat = new THREE.MeshStandardMaterial({ color: 0xddcc55, roughness: 0.5, metalness: 0.4 });
+      [-TUBE_L * 0.25, TUBE_L * 0.25].forEach(bpos => {
+        const band = new THREE.Mesh(
+          new THREE.BoxGeometry(
+            alongX ? 14 : totalA + GAP,
+            totalB + GAP,
+            alongX ? totalA + GAP : 14
+          ), bandMat
+        );
+        band.position.set(alongX ? bpos : 0, 0, alongX ? 0 : bpos);
+        group.add(band);
+      });
+
+    } else {
+    // C2 / E2: 판넬 형태
+    const PANEL_T = 20;
+    const GAP     = 8;
+    const PANEL_L = alongX ? pnlW : pnlD;
+    const PANEL_H = pnlH;
+    const secLen  = alongX ? pnlD : pnlW;
+
+    const count = Math.max(1, Math.floor(secLen / (PANEL_T + GAP)));
+    const total = count * PANEL_T + (count - 1) * GAP;
+    const start = -total / 2 + PANEL_T / 2;
+
+    const panelMat = new THREE.MeshPhysicalMaterial({
+      color, roughness: 0.3, metalness: 0.8,
+      clearcoat: 0.3, clearcoatRoughness: 0.15,
+    });
+    const edgeMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.3 });
+
+    const slabGeo = alongX
+      ? new THREE.BoxGeometry(PANEL_L, PANEL_H, PANEL_T)
+      : new THREE.BoxGeometry(PANEL_T, PANEL_H, PANEL_L);
+    const edgeGeo = new THREE.EdgesGeometry(slabGeo);
+
+    for (let i = 0; i < count; i++) {
+      const pos = start + i * (PANEL_T + GAP);
+      const slab = new THREE.Mesh(slabGeo, panelMat);
+      slab.position.set(alongX ? 0 : pos, 0, alongX ? pos : 0);
+      slab.castShadow = true;
+      slab.receiveShadow = true;
+      slab.add(new THREE.LineSegments(edgeGeo, edgeMat));
+      group.add(slab);
+    }
+
+    const bandMat2 = new THREE.MeshStandardMaterial({ color: 0xddcc55, roughness: 0.5, metalness: 0.4 });
+    [-PANEL_L * 0.25, PANEL_L * 0.25].forEach(bpos => {
+      const band = new THREE.Mesh(
+        new THREE.BoxGeometry(
+          alongX ? 14 : total + GAP,
+          PANEL_H + GAP,
+          alongX ? total + GAP : 14
+        ), bandMat2
+      );
+      band.position.set(alongX ? bpos : 0, 0, alongX ? 0 : bpos);
+      group.add(band);
+    });
+    } // end C2/E2
+
+  } else {
+    // ── 일반 부품: 단색 판넬 ─────────────────────────────────────
+    const panelGeo = new THREE.BoxGeometry(pnlW, pnlH, pnlD);
+    const panel = new THREE.Mesh(panelGeo, partMat);
+    panel.position.set(0, 0, 0);
+    panel.castShadow = true;
+    panel.receiveShadow = true;
+    panel.add(new THREE.LineSegments(
+      new THREE.EdgesGeometry(panelGeo),
+      new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.25 })
+    ));
+    group.add(panel);
+  }
+
+  // 원래와 동일: group.position = 부품 중심
   group.position.set(x, y, z);
   group.userData.contIdx = contIdx;
-  group.children.forEach(c => { if (c.isMesh) { c.castShadow = true; c.receiveShadow = true; } });
   return group;
 }
 function rebuildMeshes() {

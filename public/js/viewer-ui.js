@@ -1,8 +1,7 @@
 // viewer-ui.js — UI 렌더링, HUD, 이벤트, 카메라
 
 // ─── UI ───────────────────────────────────────────────────────
-// 아코디언 열림 상태 (code → bool)
-window._partOpen = {}; // 항상 접힌 상태로 시작
+window._partOpen = {};
 
 function togglePartAccordion(code, e) {
   e.stopPropagation();
@@ -12,8 +11,9 @@ function togglePartAccordion(code, e) {
 
 function renderPartPicker() {
   const activeCt = state.containers[activeContIdx];
-  const uQty    = state.userQty    ?? activeCt?.userQty    ?? {};
-  const uOrient = state.userOrient ?? activeCt?.userOrient ?? {};
+  const uQty      = state.userQty      ?? activeCt?.userQty      ?? {};
+  const uOrient   = state.userOrient   ?? activeCt?.userOrient   ?? {};
+  const uMaxLayer = state.userMaxLayer ?? {};
 
   const html = PARTS_DEF.map(p => {
     const placed = activeCt.placedParts.filter(pp => pp.code === p.code).length;
@@ -25,6 +25,12 @@ function renderPartPicker() {
     const barPct = target > 0 ? Math.min(100, placed / target * 100) : 0;
     const color  = getPartColor(p.code);
     const sets   = p.setQty && target > 0 ? Math.round(target / p.setQty) : 0;
+    const maxLayer = uMaxLayer[p.code] ?? 0; // 0 = 무제한
+
+    // 층수 선택 옵션: 0(무제한), 1~10층
+    const layerOptions = [0,1,2,3,4,5,6,7,8,9,10].map(n =>
+      `<option value="${n}" ${maxLayer===n?'selected':''}>${n===0?'무제한':n+'층'}</option>`
+    ).join('');
 
     return `
     <div class="part-item ${full?'full':''}">
@@ -38,6 +44,7 @@ function renderPartPicker() {
           oninput="event.stopPropagation();setPartColor('${p.code}',this.value)">
         <span style="color:${color};font-family:var(--font-mono);font-size:12px;font-weight:800;flex-shrink:0;width:20px">${p.code}</span>
         <span style="font-size:10px;color:var(--text-dim);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.name}</span>
+        ${maxLayer > 0 ? `<span title="최대 ${maxLayer}층" style="font-family:var(--font-mono);font-size:8px;background:rgba(251,146,60,.18);color:#fb923c;border:1px solid rgba(251,146,60,.35);border-radius:3px;padding:1px 5px;flex-shrink:0;margin-right:2px">${maxLayer}층↑</span>` : ''}
         <span style="font-family:var(--font-mono);font-size:10px;font-weight:700;color:${full?'#22d37f':placed>0?color:'var(--text-dim)'}">
           ${placed}<span style="color:var(--text-dim);font-weight:400;font-size:9px">/${target}</span>
         </span>
@@ -94,10 +101,34 @@ function renderPartPicker() {
           <span style="font-family:var(--font-mono);font-size:8px;color:var(--text-dim);margin-left:2px">(1세트=${p.setQty}개)</span>
         </div>` : ''}
 
+        <!-- ── 최대 적재 층 ── -->
+        <div class="part-qty-row" style="margin-top:6px;padding-top:6px;border-top:1px solid #1a2030" onclick="event.stopPropagation()">
+          <span class="qty-label" style="min-width:44px">최대층</span>
+          <div style="display:flex;align-items:center;gap:4px;flex:1">
+            <button class="qty-btn" onclick="changeMaxLayer('${p.code}',-1)"
+              style="${maxLayer===0?'opacity:.35;pointer-events:none':''}">−</button>
+            <select
+              onchange="setMaxLayer('${p.code}',this.value)"
+              onclick="event.stopPropagation()"
+              style="flex:1;background:var(--surface);border:1px solid var(--border);color:${maxLayer>0?'#fb923c':'var(--text-dim)'};border-radius:3px;font-family:var(--font-mono);font-size:11px;font-weight:${maxLayer>0?'700':'400'};padding:2px 4px;outline:none;cursor:pointer">
+              ${layerOptions}
+            </select>
+            <button class="qty-btn" onclick="changeMaxLayer('${p.code}',+1)"
+              style="${maxLayer>=10?'opacity:.35;pointer-events:none':''}">＋</button>
+          </div>
+          ${maxLayer > 0 ? `
+          <button onclick="setMaxLayer('${p.code}',0);event.stopPropagation()"
+            style="background:none;border:none;color:var(--text-dim);font-size:9px;cursor:pointer;padding:0 2px;font-family:var(--font-mono);text-decoration:underline;flex-shrink:0"
+            title="층 제한 해제">해제</button>` : ''}
+        </div>
+        ${maxLayer > 0 ? `
+        <div style="font-family:var(--font-mono);font-size:8px;color:#fb923c;margin-top:3px;text-align:right;opacity:.8">
+          자동배치 시 최대 ${maxLayer}층까지만 쌓아요
+        </div>` : ''}
+
         <!-- 배치 상태 -->
         <div style="font-family:var(--font-mono);font-size:9px;color:var(--text-dim);margin-top:5px;display:flex;justify-content:space-between;align-items:center">
           <span><span style="color:${color};font-weight:700">${placed}</span> / ${target} 배치됨</span>
-          
         </div>
       </div>
       ` : ''}
@@ -107,6 +138,21 @@ function renderPartPicker() {
   const picker = document.getElementById('partPicker');
   if (picker) picker.innerHTML = html;
 }
+
+// ─── 최대 층수 제어 ──────────────────────────────────────────
+function setMaxLayer(code, val) {
+  if (!state.userMaxLayer) state.userMaxLayer = {};
+  state.userMaxLayer[code] = Math.max(0, Math.min(10, parseInt(val) || 0));
+  saveState(state);
+  renderPartPicker();
+}
+
+function changeMaxLayer(code, delta) {
+  if (!state.userMaxLayer) state.userMaxLayer = {};
+  const cur = state.userMaxLayer[code] ?? 0;
+  setMaxLayer(code, cur + delta);
+}
+
 // 적재 목록 컨테이너별 열림 상태
 if (!window._listOpen) window._listOpen = {};
 
@@ -119,7 +165,6 @@ function renderPlacedList() {
   const el = document.getElementById('placedList');
   const totalPlaced = state.containers.reduce((s, ct) => s + ct.placedParts.length, 0);
 
-  // 헤더 총 개수 업데이트
   const hdrEl = document.getElementById('placedListHeader');
   if (hdrEl) hdrEl.textContent = '적재 목록 (' + totalPlaced + '개)';
 
@@ -130,7 +175,7 @@ function renderPlacedList() {
 
   el.innerHTML = state.containers.map((ct, idx) => {
     if (!ct.placedParts.length) return '';
-    const open = !!window._listOpen[idx]; // 기본 접힘
+    const open = !!window._listOpen[idx];
     return `
       <div class="placed-group-header" onclick="toggleListGroup(${idx})">
         <span style="font-family:var(--font-mono);font-weight:700;color:var(--accent)">#${idx+1} 컨테이너</span>
@@ -216,7 +261,6 @@ function updateStats() {
       return p ? s + p.w * p.h * p.d : s;
     }, 0), 0);
   const pct = Math.min(100, used / vol * 100);
-  const totalParts = state.containers.reduce((s, ct) => s + ct.placedParts.length, 0);
   document.getElementById('loadPct').textContent  = pct.toFixed(1);
   document.getElementById('loadBar').style.width  = pct + '%';
   document.getElementById('hudCount').textContent = state.containers[activeContIdx]?.placedParts.length ?? 0;
@@ -230,7 +274,6 @@ function setOrient(code, orient) {
   saveState(state);
   renderPartPicker();
 }
-
 
 function changeUserQtyBySet(code, setDelta) {
   const p = PARTS_DEF.find(x => x.code === code);
@@ -252,121 +295,6 @@ function setUserQtyBySets(code, sets) {
 // ══════════════════════════════════════════════════════════════
 // 적재 최적화 분석 UI
 // ══════════════════════════════════════════════════════════════
-function showBenchmarkLoading(labels) {
-  let modal = document.getElementById('benchmarkModal');
-  if (!modal) {
-    modal = document.createElement('div');
-    modal.id = 'benchmarkModal';
-    modal.style.cssText = `position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.75);backdrop-filter:blur(4px);`;
-    document.body.appendChild(modal);
-  }
-  const algoColors = { column:'#38bdf8', guillotine:'#a78bfa', maxrects:'#34d399', skyline:'#fb923c' };
-  const keys = ['column','guillotine','maxrects','skyline'];
-  const rows = labels.map((label, i) => `
-    <div id="bench-row-${i}" style="display:flex;align-items:center;gap:12px;padding:10px 14px;border-radius:8px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06)">
-      <div style="width:8px;height:8px;border-radius:50%;background:${algoColors[keys[i]]};opacity:0.35;flex-shrink:0" id="bench-dot-${i}"></div>
-      <span style="font-size:12px;color:var(--text-dim);flex:1" id="bench-lbl-${i}">${label}</span>
-      <span style="font-size:10px;font-family:var(--font-mono);color:var(--text-dim)" id="bench-status-${i}">대기 중</span>
-    </div>`).join('');
-  modal.innerHTML = `
-    <div style="background:var(--bg-panel);border:1px solid rgba(255,255,255,0.1);border-radius:14px;padding:20px;width:320px;max-width:90vw">
-      <div style="font-size:15px;font-weight:700;color:#fff;margin-bottom:4px">적재 최적화 분석 중</div>
-      <div style="font-size:11px;color:var(--text-dim);margin-bottom:14px">4가지 배치 전략으로 최적 적재량을 시뮬레이션하고 있어요</div>
-      <div style="display:flex;flex-direction:column;gap:6px" id="bench-rows">${rows}</div>
-      <div style="margin-top:12px;background:rgba(255,255,255,0.06);border-radius:3px;height:4px;overflow:hidden">
-        <div id="bench-progress-bar" style="height:100%;width:0%;background:linear-gradient(90deg,#38bdf8,#a78bfa);border-radius:2px;transition:width .3s ease"></div>
-      </div>
-      <div style="text-align:center;margin-top:8px;font-size:10px;color:var(--text-dim)" id="bench-progress-txt">0 / 4 완료</div>
-    </div>`;
-  modal.style.display = 'flex';
-}
-
-function updateBenchmarkLoading(doneIdx, currentLabel) {
-  const algoColors = { column:'#38bdf8', guillotine:'#a78bfa', maxrects:'#34d399', skyline:'#fb923c' };
-  const keys = ['column','guillotine','maxrects','skyline'];
-  const prev = doneIdx - 1;
-  if (prev >= 0) {
-    const dot    = document.getElementById(`bench-dot-${prev}`);
-    const status = document.getElementById(`bench-status-${prev}`);
-    const row    = document.getElementById(`bench-row-${prev}`);
-    if (status) { status.textContent = '완료 ✓'; status.style.color = algoColors[keys[prev]]; }
-    if (row)    row.style.borderColor = algoColors[keys[prev]] + '44';
-    if (dot)    { dot.style.opacity = '1'; }
-  }
-  const dot    = document.getElementById(`bench-dot-${doneIdx}`);
-  const status = document.getElementById(`bench-status-${doneIdx}`);
-  const row    = document.getElementById(`bench-row-${doneIdx}`);
-  if (dot)    { dot.style.opacity = '1'; dot.style.boxShadow = `0 0 8px ${algoColors[keys[doneIdx]]}`; }
-  if (status) { status.textContent = '계산 중…'; status.style.color = '#fff'; }
-  if (row)    row.style.background = 'rgba(255,255,255,0.05)';
-  const bar = document.getElementById('bench-progress-bar');
-  const txt = document.getElementById('bench-progress-txt');
-  if (bar) bar.style.width = (doneIdx / 4 * 100) + '%';
-  if (txt) txt.textContent = `${doneIdx} / 4 완료`;
-}
-
-function showBenchmarkResult(results, best) {
-  let modal = document.getElementById('benchmarkModal');
-  if (!modal) { modal = document.createElement('div'); modal.id = 'benchmarkModal'; modal.style.cssText = `position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.75);backdrop-filter:blur(4px);`; document.body.appendChild(modal); }
-
-  const algoColors = { column:'#38bdf8', guillotine:'#a78bfa', maxrects:'#34d399', skyline:'#fb923c' };
-  const algoMeta   = {
-    column:     { name:'열 우선 배치',   desc:'X축 열로 나눠 Z방향 끝까지 채운 뒤 다음 열로 이동해요.' },
-    guillotine: { name:'공간 분할 배치', desc:'가장 낮은 바닥 위치를 스캔해 순서대로 채워요.' },
-    maxrects:   { name:'잔여 공간 최적', desc:'여백이 가장 적은 위치를 우선 선택해 틈새를 최소화해요.' },
-    skyline:    { name:'높이맵 적재',    desc:'바닥을 격자로 나눠 가장 낮은 곳부터 균일하게 채워요.' },
-  };
-
-  const maxCount = Math.max(...results.map(r => r.count));
-  const rows = results.map(r => {
-    const isBest = r.key === best.key;
-    const color  = algoColors[r.key] || '#888';
-    const meta   = algoMeta[r.key]   || { name: r.label, desc: '' };
-    const barW   = maxCount > 0 ? (r.count / maxCount * 100).toFixed(1) : 0;
-    return `
-      <div style="background:${isBest?'rgba(56,189,248,0.08)':'rgba(255,255,255,0.03)'};border:1px solid ${isBest?color:'rgba(255,255,255,0.08)'};border-radius:10px;padding:12px 14px;display:flex;flex-direction:column;gap:6px;position:relative;overflow:hidden;">
-        ${isBest?`<div style="position:absolute;top:0;right:0;background:${color};color:#000;font-size:9px;font-weight:700;padding:3px 8px;border-radius:0 10px 0 8px;">✦ 최적</div>`:''}
-        <div style="display:flex;align-items:center;gap:8px">
-          <div style="width:10px;height:10px;border-radius:50%;background:${color};flex-shrink:0"></div>
-          <div>
-            <div style="font-size:12px;font-weight:700;color:${color}">${meta.name}</div>
-            <div style="font-size:9px;color:var(--text-dim)">${r.label}</div>
-          </div>
-          <span style="margin-left:auto;font-family:var(--font-mono);font-size:13px;font-weight:700;color:#fff">${r.pct}%</span>
-        </div>
-        <div style="font-size:10px;color:var(--text-dim);line-height:1.5;border-left:2px solid ${color}33;padding-left:8px">${meta.desc}</div>
-        <div style="background:rgba(0,0,0,0.3);border-radius:4px;height:5px;overflow:hidden">
-          <div style="height:100%;width:${barW}%;background:${color};border-radius:4px;transition:width .5s ease"></div>
-        </div>
-        <div style="display:flex;justify-content:space-between;font-size:10px;font-family:var(--font-mono);color:var(--text-dim)">
-          <span>${r.count.toLocaleString()}개 배치</span>
-          <button onclick="applyAlgoResult(window._benchResults['${r.key}']);document.getElementById('benchmarkModal').style.display='none';showToast('✅ ${meta.name} 결과 적용됨')"
-            style="background:${color}22;border:1px solid ${color}55;color:${color};border-radius:5px;padding:2px 8px;cursor:pointer;font-size:10px">
-            이 결과 적용
-          </button>
-        </div>
-      </div>`;
-  }).join('');
-
-  modal.innerHTML = `
-    <div style="background:var(--bg-panel);border:1px solid rgba(255,255,255,0.1);border-radius:14px;padding:20px;width:360px;max-width:92vw;max-height:88vh;overflow-y:auto">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
-        <div>
-          <div style="font-size:16px;font-weight:700;color:#fff">📊 적재 최적화 분석 결과</div>
-          <div style="font-size:11px;color:var(--text-dim);margin-top:2px">4가지 배치 전략 비교 완료</div>
-        </div>
-        <button onclick="document.getElementById('benchmarkModal').style.display='none'"
-          style="background:rgba(255,255,255,0.08);border:none;color:var(--text-dim);border-radius:6px;padding:4px 10px;cursor:pointer;font-size:14px">✕</button>
-      </div>
-      <div style="display:flex;flex-direction:column;gap:8px">${rows}</div>
-      <button onclick="applyAlgoResult(window._benchResults['${best.key}']);document.getElementById('benchmarkModal').style.display='none';showToast('✅ ${algoMeta[best.key]?.name || best.label} 최적 결과 적용됨')"
-        style="margin-top:14px;width:100%;padding:10px;background:linear-gradient(135deg,#38bdf8,#a78bfa);border:none;border-radius:8px;color:#000;font-weight:700;font-size:13px;cursor:pointer">
-        ✦ 최적 결과 적용 (${algoMeta[best.key]?.name || best.label})
-      </button>
-    </div>`;
-  modal.style.display = 'flex';
-}
-
 function changeUserQty(code, delta) {
   if (!state.userQty) state.userQty = {};
   state.userQty[code] = Math.max(0, Math.min(MAX_QTY, (state.userQty[code] ?? 0) + delta));
@@ -377,11 +305,6 @@ function setUserQty(code, val) {
   state.userQty[code] = Math.max(0, Math.min(MAX_QTY, parseInt(val) || 0));
   saveState(state); renderPartPicker();
 }
-
-
-// ══════════════════════════════════════════════════════════════
-// 벤치마크 결과 모달
-
 
 function showToast(msg) {
   let t = document.getElementById('toast');
@@ -412,18 +335,15 @@ function setView(v) {
 }
 
 // ─── EVENTS ───────────────────────────────────────────────────
-// ─── HIGHLIGHT RAYCAST ────────────────────────────────────────
 function doRaycastHighlight(clientX, clientY, canvas) {
   const rect = canvas.getBoundingClientRect();
   mouse.x =  ((clientX - rect.left) / rect.width)  * 2 - 1;
   mouse.y = -((clientY - rect.top)  / rect.height) * 2 + 1;
   raycaster.setFromCamera(mouse, camera);
-  // Group 자식까지 재귀 탐색
   const groups = Object.values(meshMap).filter(Boolean);
   const hits = raycaster.intersectObjects(groups, true);
   if (!hits.length) { clearHighlight(); return; }
 
-  // hit된 객체의 부모 Group에서 id 찾기
   let obj = hits[0].object;
   let id = obj.userData.id;
   while (id === undefined && obj.parent) {
@@ -441,7 +361,6 @@ function setHighlight(id) {
   const group = meshMap[id];
   if (!group) return;
 
-  // Group 자식 메시들에 emissive 적용
   group.traverse(child => {
     if (child.isMesh && child.material) {
       child.userData._origEmissive = child.material.emissive?.getHex() ?? 0;
@@ -473,7 +392,6 @@ function restoreMeshColor(id) {
 }
 
 function showInfoPopup(id) {
-  // 어느 컨테이너의 어느 부품인지 찾기
   let pp = null, contIdx = -1;
   state.containers.forEach((ct, ci) => {
     const found = ct.placedParts.find(p => p.id === id);
@@ -483,7 +401,7 @@ function showInfoPopup(id) {
 
   const p = PARTS_DEF.find(x => x.code === pp.code);
   const dims = getOrientedDims(p, pp.orient || 'flat');
-  const layerNum = Math.round((pp.y + dims.h/2) / dims.h); // 대략적 층 번호
+  const layerNum = Math.round((pp.y + dims.h/2) / dims.h);
 
   let popup = document.getElementById('infoPopup');
   if (!popup) {
@@ -501,6 +419,11 @@ function showInfoPopup(id) {
     document.querySelector('.viewport-wrap').appendChild(popup);
   }
 
+  const maxLayer = state.userMaxLayer?.[p.code] ?? 0;
+  const layerLimitStr = maxLayer > 0
+    ? `<span style="color:#fb923c"> / 최대${maxLayer}층</span>`
+    : '';
+
   popup.innerHTML = `
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
       <div style="width:10px;height:10px;border-radius:2px;background:${p.color};flex-shrink:0"></div>
@@ -516,7 +439,7 @@ function showInfoPopup(id) {
         <span><span style="color:#4ade80;font-size:9px">Y </span>${Math.round(pp.y)}</span>
         <span><span style="color:#f59e0b;font-size:9px">Z </span>${Math.round(pp.z)}</span>
       </span>
-      <span>층</span><span style="color:var(--accent)">${layerNum}층</span>
+      <span>층</span><span style="color:var(--accent)">${layerNum}층${layerLimitStr}</span>
       <span>컨테이너</span><span style="color:var(--green)">#${contIdx+1}</span>
       <span>재질</span><span style="color:var(--text)">${p.mat}</span>
     </div>
@@ -536,7 +459,6 @@ function applySliceAndLayer() {
       const mesh = meshMap[pp.id];
       if (!mesh) return;
 
-      // 필터 없으면 무조건 표시
       if (!sliceAxis && visibleCodes === null) {
         mesh.visible = true;
         return;
@@ -544,10 +466,8 @@ function applySliceAndLayer() {
 
       let show = true;
 
-      // 부품 코드 필터
       if (visibleCodes !== null && !visibleCodes.has(pp.code)) show = false;
 
-      // 슬라이스 필터
       if (show && sliceAxis) {
         const pos = sliceAxis === 'x' ? pp.x : sliceAxis === 'y' ? pp.y : pp.z;
         if (pos > sliceValue) show = false;
@@ -560,10 +480,8 @@ function applySliceAndLayer() {
 
 function setSlice(axis) {
   if (sliceAxis === axis) {
-    // 같은 버튼 다시 누르면 → 슬라이스 OFF, 전체 복원
     sliceAxis = null;
     document.querySelectorAll('.slice-btn').forEach(b => b.classList.remove('active'));
-    // 모든 메시 강제 visible 복원
     Object.values(meshMap).forEach(m => { if (m) m.visible = true; });
     visibleCodes = null;
     document.querySelectorAll('.layer-btn').forEach(b => b.classList.add('active'));
@@ -589,7 +507,6 @@ function updateSliceSlider() {
   if (sliceAxis === 'x') { min = -c.iW/2; max = c.iW/2; }
   else if (sliceAxis === 'y') { min = 0; max = c.iH; }
   else { min = -c.iD/2; max = c.iD/2; }
-  // 슬라이더 표시
   wrap.style.display = 'flex';
   const slider = document.getElementById('sliceSlider');
   slider.min = min; slider.max = max;
@@ -605,7 +522,6 @@ function onSliceSlider(val) {
 }
 
 function buildLayerToggles() {
-  // 현재 컨테이너에 배치된 부품 코드 목록
   const ct = state.containers[activeContIdx];
   const wrap = document.getElementById('layerToggles');
   if (!wrap) return;
@@ -615,7 +531,6 @@ function buildLayerToggles() {
     return;
   }
 
-  // 실제 배치된 코드만 추출
   const usedCodes = [...new Set(ct.placedParts.map(pp => pp.code))].sort();
 
   wrap.innerHTML = usedCodes.map(code => {
@@ -630,7 +545,6 @@ function buildLayerToggles() {
 
 function toggleCode(code, btn) {
   if (visibleCodes === null) {
-    // 전체 표시 → 전체 코드로 초기화 후 이 코드 제거
     const ct = state.containers[activeContIdx];
     visibleCodes = new Set(ct.placedParts.map(pp => pp.code));
   }
@@ -651,13 +565,11 @@ function resetLayers() {
   document.querySelectorAll('.slice-btn').forEach(b => b.classList.remove('active'));
   if (document.getElementById('sliceSliderWrap'))
     document.getElementById('sliceSliderWrap').style.display = 'none';
-  // 모든 메시 강제 visible 복원
   Object.values(meshMap).forEach(m => { if (m) m.visible = true; });
 }
 
 
 function setupEvents(canvas) {
-  // ── MOUSE ───────────────────────────────────────────────
   canvas.addEventListener('mousedown', e => {
     orbit.active = true; orbit.right = e.button === 2;
     orbit.lx = e.clientX; orbit.ly = e.clientY;
@@ -690,7 +602,6 @@ function setupEvents(canvas) {
     doRaycastHighlight(e.clientX, e.clientY, canvas);
   });
 
-  // ── TOUCH ───────────────────────────────────────────────
   let touch = { active: false, pinch: false, lx: 0, ly: 0, dist: 0, moved: false };
 
   canvas.addEventListener('touchstart', e => {
@@ -710,7 +621,6 @@ function setupEvents(canvas) {
   canvas.addEventListener('touchmove', e => {
     e.preventDefault();
     if (e.touches.length === 2 && touch.pinch) {
-      // 핀치 줌
       const dx = e.touches[0].clientX - e.touches[1].clientX;
       const dy = e.touches[0].clientY - e.touches[1].clientY;
       const newDist = Math.hypot(dx, dy);
@@ -724,7 +634,6 @@ function setupEvents(canvas) {
       if (Math.abs(dx) > 3 || Math.abs(dy) > 3) touch.moved = true;
       touch.lx = e.touches[0].clientX;
       touch.ly = e.touches[0].clientY;
-      // 두 손가락 팬 전환 없이 단순 회전
       camTheta -= dx * 0.006;
       camPhi = Math.max(0.05, Math.min(Math.PI * 0.48, camPhi - dy * 0.006));
       updateCamera();

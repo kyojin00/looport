@@ -26,7 +26,6 @@ function setPartColor(code, hex) {
       const col = new THREE.Color(hex);
       group.traverse(child => {
         if (child.isMesh && child.material && child.material.color) {
-          // 슬롯(검정) 등 특수 재질 제외
           if (child.material.color.getHex() !== 0x111111) {
             child.material.color.set(col);
           }
